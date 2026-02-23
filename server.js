@@ -1,34 +1,40 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
-const fs = require('fs');
+const { MongoClient } = require('mongodb');
 const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 const PORT = process.env.PORT || 3000;
-const DATA_FILE = path.join(__dirname, 'data.json');
+const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://dlwngjs97:Centras123!@cluster0.7ugphzq.mongodb.net/shared-calendar?appName=Cluster0';
+
+let db;
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-function readData() {
-  if (!fs.existsSync(DATA_FILE)) {
-    const initial = { members: [], events: [] };
-    fs.writeFileSync(DATA_FILE, JSON.stringify(initial, null, 2));
-    return initial;
-  }
-  return JSON.parse(fs.readFileSync(DATA_FILE, 'utf-8'));
+// MongoDB 연결
+async function connectDB() {
+  const client = new MongoClient(MONGO_URI);
+  await client.connect();
+  db = client.db('shared-calendar');
+  console.log('MongoDB 연결 완료');
 }
 
-function writeData(data) {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+// DB 읽기/쓰기 헬퍼
+async function getMembers() {
+  return db.collection('members').find().toArray();
 }
 
-function broadcast() {
-  const data = readData();
-  io.emit('sync', { members: data.members, events: data.events });
+async function getEvents() {
+  return db.collection('events').find().toArray();
+}
+
+async function broadcast() {
+  const [members, events] = await Promise.all([getMembers(), getEvents()]);
+  io.emit('sync', { members, events });
 }
 
 // 날짜 유틸
@@ -41,41 +47,42 @@ function parse(s) {
 }
 
 // ─── 멤버 ───
-app.get('/api/members', (req, res) => res.json(readData().members));
+app.get('/api/members', async (req, res) => {
+  res.json(await getMembers());
+});
 
-app.post('/api/members', (req, res) => {
-  const data = readData();
+app.post('/api/members', async (req, res) => {
   const { name, color } = req.body;
   if (!name || !color) return res.status(400).json({ error: '이름과 색상을 입력하세요' });
-  if (data.members.length >= 5) return res.status(400).json({ error: '최대 5명까지' });
-  if (data.members.find(m => m.name === name)) return res.status(400).json({ error: '이미 등록된 이름' });
+
+  const members = await getMembers();
+  if (members.length >= 5) return res.status(400).json({ error: '최대 5명까지' });
+  if (members.find(m => m.name === name)) return res.status(400).json({ error: '이미 등록된 이름' });
+
   const member = { id: Date.now().toString(), name, color };
-  data.members.push(member);
-  writeData(data);
-  broadcast();
+  await db.collection('members').insertOne(member);
+  await broadcast();
   res.json(member);
 });
 
-app.delete('/api/members/:id', (req, res) => {
-  const data = readData();
-  data.members = data.members.filter(m => m.id !== req.params.id);
-  data.events = data.events.filter(e => e.memberId !== req.params.id);
-  writeData(data);
-  broadcast();
+app.delete('/api/members/:id', async (req, res) => {
+  await db.collection('members').deleteOne({ id: req.params.id });
+  await db.collection('events').deleteMany({ memberId: req.params.id });
+  await broadcast();
   res.json({ ok: true });
 });
 
 // ─── 이벤트 ───
-app.get('/api/events', (req, res) => res.json(readData().events));
+app.get('/api/events', async (req, res) => {
+  res.json(await getEvents());
+});
 
 // 반복 날짜 생성
 function generateRepeatDates(startStr, repeat, repeatEndStr) {
   const dates = [startStr];
   if (!repeat || repeat === 'none' || !repeatEndStr) return dates;
-
   const startD = parse(startStr);
   const endD = parse(repeatEndStr);
-
   for (let i = 1; i <= 365; i++) {
     const next = new Date(startD);
     if (repeat === 'daily') next.setDate(startD.getDate() + i);
@@ -89,19 +96,17 @@ function generateRepeatDates(startStr, repeat, repeatEndStr) {
   return dates;
 }
 
-// 이벤트 생성
-app.post('/api/events', (req, res) => {
-  const data = readData();
+app.post('/api/events', async (req, res) => {
   const { memberId, title, date, endDate, startTime, endTime, memo, allDay, repeat, repeatEnd } = req.body;
   if (!memberId || !title || !date) return res.status(400).json({ error: '필수 항목을 입력하세요' });
 
   const isRepeat = repeat && repeat !== 'none';
   const groupId = isRepeat ? 'rg_' + Date.now() : null;
   const dates = isRepeat ? generateRepeatDates(date, repeat, repeatEnd) : [date];
-  const created = [];
+  const docs = [];
 
   dates.forEach((d, i) => {
-    const event = {
+    docs.push({
       id: (Date.now() + i).toString(),
       memberId, title, date: d,
       endDate: endDate || '',
@@ -113,90 +118,92 @@ app.post('/api/events', (req, res) => {
       repeatEnd: repeatEnd || '',
       repeatGroup: groupId,
       createdAt: new Date().toISOString()
-    };
-    data.events.push(event);
-    created.push(event);
+    });
   });
 
-  writeData(data);
-  broadcast();
-  res.json({ count: created.length });
+  await db.collection('events').insertMany(docs);
+  await broadcast();
+  res.json({ count: docs.length });
 });
 
-// 이벤트 수정
-app.put('/api/events/:id', (req, res) => {
-  const data = readData();
-  const { mode } = req.query; // 'this' | 'future' | 'all'
-  const target = data.events.find(e => e.id === req.params.id);
+app.put('/api/events/:id', async (req, res) => {
+  const { mode } = req.query;
+  const target = await db.collection('events').findOne({ id: req.params.id });
   if (!target) return res.status(404).json({ error: '일정을 찾을 수 없습니다' });
 
   const { title, date, endDate, startTime, endTime, memo, memberId, allDay } = req.body;
-
-  function applyUpdate(ev) {
-    if (title !== undefined) ev.title = title;
-    if (date !== undefined && mode === 'this') ev.date = date;
-    if (endDate !== undefined) ev.endDate = endDate;
-    if (allDay !== undefined) ev.allDay = !!allDay;
-    if (ev.allDay) { ev.startTime = ''; ev.endTime = ''; }
+  const update = {};
+  if (title !== undefined) update.title = title;
+  if (date !== undefined && mode === 'this') update.date = date;
+  if (endDate !== undefined) update.endDate = endDate;
+  if (allDay !== undefined) {
+    update.allDay = !!allDay;
+    if (allDay) { update.startTime = ''; update.endTime = ''; }
     else {
-      if (startTime !== undefined) ev.startTime = startTime;
-      if (endTime !== undefined) ev.endTime = endTime;
+      if (startTime !== undefined) update.startTime = startTime;
+      if (endTime !== undefined) update.endTime = endTime;
     }
-    if (memo !== undefined) ev.memo = memo;
-    if (memberId !== undefined) ev.memberId = memberId;
+  } else {
+    if (startTime !== undefined) update.startTime = startTime;
+    if (endTime !== undefined) update.endTime = endTime;
   }
+  if (memo !== undefined) update.memo = memo;
+  if (memberId !== undefined) update.memberId = memberId;
 
   if (!target.repeatGroup || mode === 'this') {
-    applyUpdate(target);
+    await db.collection('events').updateOne({ id: req.params.id }, { $set: update });
   } else if (mode === 'all') {
-    data.events.filter(e => e.repeatGroup === target.repeatGroup).forEach(applyUpdate);
+    await db.collection('events').updateMany({ repeatGroup: target.repeatGroup }, { $set: update });
   } else if (mode === 'future') {
-    data.events
-      .filter(e => e.repeatGroup === target.repeatGroup && e.date >= target.date)
-      .forEach(applyUpdate);
-  }
-
-  writeData(data);
-  broadcast();
-  res.json({ ok: true });
-});
-
-// 이벤트 삭제
-app.delete('/api/events/:id', (req, res) => {
-  const data = readData();
-  const { mode } = req.query; // 'this' | 'future' | 'all'
-  const target = data.events.find(e => e.id === req.params.id);
-  if (!target) return res.status(404).json({ error: '일정 없음' });
-
-  if (!target.repeatGroup || mode === 'this') {
-    data.events = data.events.filter(e => e.id !== req.params.id);
-  } else if (mode === 'all') {
-    data.events = data.events.filter(e => e.repeatGroup !== target.repeatGroup);
-  } else if (mode === 'future') {
-    data.events = data.events.filter(e =>
-      !(e.repeatGroup === target.repeatGroup && e.date >= target.date)
+    await db.collection('events').updateMany(
+      { repeatGroup: target.repeatGroup, date: { $gte: target.date } },
+      { $set: update }
     );
   }
 
-  writeData(data);
-  broadcast();
+  await broadcast();
+  res.json({ ok: true });
+});
+
+app.delete('/api/events/:id', async (req, res) => {
+  const { mode } = req.query;
+  const target = await db.collection('events').findOne({ id: req.params.id });
+  if (!target) return res.status(404).json({ error: '일정 없음' });
+
+  if (!target.repeatGroup || mode === 'this') {
+    await db.collection('events').deleteOne({ id: req.params.id });
+  } else if (mode === 'all') {
+    await db.collection('events').deleteMany({ repeatGroup: target.repeatGroup });
+  } else if (mode === 'future') {
+    await db.collection('events').deleteMany(
+      { repeatGroup: target.repeatGroup, date: { $gte: target.date } }
+    );
+  }
+
+  await broadcast();
   res.json({ ok: true });
 });
 
 // Socket.IO
-io.on('connection', (socket) => {
-  const data = readData();
-  socket.emit('sync', { members: data.members, events: data.events });
+io.on('connection', async (socket) => {
+  const [members, events] = await Promise.all([getMembers(), getEvents()]);
+  socket.emit('sync', { members, events });
 });
 
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`공유 캘린더: http://localhost:${PORT}`);
-  const os = require('os');
-  const nets = os.networkInterfaces();
-  for (const name of Object.keys(nets)) {
-    for (const net of nets[name]) {
-      if (net.family === 'IPv4' && !net.internal)
-        console.log(`같은 와이파이: http://${net.address}:${PORT}`);
+// 서버 시작
+connectDB().then(() => {
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`공유 캘린더: http://localhost:${PORT}`);
+    const os = require('os');
+    const nets = os.networkInterfaces();
+    for (const name of Object.keys(nets)) {
+      for (const net of nets[name]) {
+        if (net.family === 'IPv4' && !net.internal)
+          console.log(`같은 와이파이: http://${net.address}:${PORT}`);
+      }
     }
-  }
+  });
+}).catch(err => {
+  console.error('MongoDB 연결 실패:', err.message);
+  process.exit(1);
 });
