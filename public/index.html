@@ -102,7 +102,8 @@
           <div class="title-options" id="title-options">
             <label class="title-opt"><input type="radio" name="evt-title" value="휴무"><span>휴무</span></label>
             <label class="title-opt"><input type="radio" name="evt-title" value="늦퇴"><span>늦퇴</span></label>
-            <label class="title-opt"><input type="radio" name="evt-title" value="회식불참"><span>회식불참</span></label>
+            <label class="title-opt"><input type="radio" name="evt-title" value="회의"><span>회의</span></label>
+            <label class="title-opt"><input type="radio" name="evt-title" value="회의불참"><span>회의불참</span></label>
             <label class="title-opt"><input type="radio" name="evt-title" value="여행"><span>여행</span></label>
             <label class="title-opt"><input type="radio" name="evt-title" value="__custom"><span>직접입력</span></label>
           </div>
@@ -117,23 +118,24 @@
           </label>
         </div>
 
-        <div class="field">
-          <label>시작일</label>
-          <input type="date" id="event-date" required>
-        </div>
-
-        <div class="field" id="field-end-date" style="display:none">
-          <label>종료일</label>
-          <input type="date" id="event-end-date">
+        <div class="date-row">
+          <div class="field-half">
+            <label>시작일</label>
+            <input type="date" id="event-date" required>
+          </div>
+          <div class="field-half">
+            <label>종료일</label>
+            <input type="date" id="event-end-date">
+          </div>
         </div>
 
         <div class="time-fields" id="time-fields" style="display:none">
           <div class="field-half">
-            <label>시작</label>
+            <label>시작 시간</label>
             <input type="time" id="event-start">
           </div>
           <div class="field-half">
-            <label>종료</label>
+            <label>종료 시간</label>
             <input type="time" id="event-end">
           </div>
         </div>

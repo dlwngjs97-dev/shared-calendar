@@ -435,6 +435,13 @@ body {
 .toggle input:checked + .toggle-slider { background: var(--primary); }
 .toggle input:checked + .toggle-slider::before { transform: translateX(20px); }
 
+/* 날짜 행 */
+.date-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
 /* 시간 */
 .time-fields {
   display: flex;

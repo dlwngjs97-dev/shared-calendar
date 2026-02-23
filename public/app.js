@@ -4,7 +4,7 @@ let events = [];
 let currentDate = new Date();
 let hiddenMembers = new Set();
 let socket;
-let pendingRepeatAction = null; // { type: 'edit'|'delete', eventId, formData }
+let pendingRepeatAction = null;
 
 const SHARED = { id: '__shared', name: '공용', color: '#555555' };
 
@@ -53,6 +53,16 @@ function renderAll() {
 }
 
 // ─── 캘린더 ───
+// 특정 날짜에 해당하는 이벤트 (시작일~종료일 범위 포함)
+function eventsFor(ds) {
+  return events.filter(e => {
+    if (e.endDate && e.endDate >= e.date) {
+      return ds >= e.date && ds <= e.endDate;
+    }
+    return e.date === ds;
+  }).sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
+}
+
 function renderCalendar() {
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -141,12 +151,14 @@ function renderTodayEvents() {
   todayEventsEl.innerHTML = ev.map(e => {
     const m = findMember(e.memberId);
     const c = m ? m.color : '#868e96';
-    const time = e.allDay ? '종일' : (e.startTime ? `${e.startTime}${e.endTime ? ' ~ '+e.endTime : ''}` : '');
+    const time = formatTimeDisplay(e);
+    const dateRange = formatDateRange(e);
     return `<div class="today-card">
       <span class="tc-dot" style="background:${c}"></span>
       <div class="tc-info">
         <div class="tc-name">${m ? m.name : '?'}</div>
         <div class="tc-title">${e.title}${e.memo ? ' · '+e.memo : ''}</div>
+        ${dateRange ? `<div class="tc-time">${dateRange}</div>` : ''}
         ${time ? `<div class="tc-time">${time}</div>` : ''}
       </div>
     </div>`;
@@ -164,8 +176,23 @@ function fmtDateKR(ds) {
   return `${d.getMonth()+1}월 ${d.getDate()}일 (${w[d.getDay()]})`;
 }
 
-function eventsFor(ds) {
-  return events.filter(e => e.date === ds).sort((a,b) => (a.startTime||'').localeCompare(b.startTime||''));
+function fmtDateShort(ds) {
+  const d = new Date(ds.replace(/-/g, '/'));
+  return `${d.getMonth()+1}/${d.getDate()}`;
+}
+
+function formatTimeDisplay(ev) {
+  if (ev.allDay) return '';
+  if (ev.startTime) return `${ev.startTime}${ev.endTime ? ' ~ '+ev.endTime : ''}`;
+  return '';
+}
+
+function formatDateRange(ev) {
+  if (ev.endDate && ev.endDate !== ev.date) {
+    return `${fmtDateShort(ev.date)} ~ ${fmtDateShort(ev.endDate)}`;
+  }
+  if (ev.allDay) return '종일';
+  return '';
 }
 
 function repeatLabel(r) {
@@ -225,12 +252,9 @@ const allDayToggle = $('event-allday');
 const timeFields = $('time-fields');
 const customTitleInput = $('event-custom-title');
 const repeatUntil = $('repeat-until');
-const fieldEndDate = $('field-end-date');
 
 allDayToggle.addEventListener('change', () => {
-  const on = allDayToggle.checked;
-  timeFields.style.display = on ? 'none' : 'flex';
-  fieldEndDate.style.display = on ? 'none' : 'none'; // 종일일 때도 숨김
+  timeFields.style.display = allDayToggle.checked ? 'none' : 'flex';
 });
 
 document.querySelectorAll('input[name="evt-title"]').forEach(opt => {
@@ -252,6 +276,15 @@ document.querySelectorAll('input[name="evt-repeat"]').forEach(opt => {
   });
 });
 
+// 시작일 변경 시 종료일 자동 조정
+$('event-date').addEventListener('change', () => {
+  const startVal = $('event-date').value;
+  const endVal = $('event-end-date').value;
+  if (endVal && endVal < startVal) {
+    $('event-end-date').value = startVal;
+  }
+});
+
 // FAB
 $('btn-fab').addEventListener('click', () => openEventSheet());
 
@@ -267,7 +300,6 @@ function openEventSheet(date = null, evData = null) {
   allDayToggle.checked = true;
   timeFields.style.display = 'none';
   repeatUntil.style.display = 'none';
-  fieldEndDate.style.display = 'none';
 
   // 멤버 버튼
   const row = $('member-select-row');
@@ -295,7 +327,7 @@ function openEventSheet(date = null, evData = null) {
       b.classList.toggle('selected', b.dataset.mid === evData.memberId);
     });
 
-    const presets = ['휴무','늦퇴','회식불참','여행'];
+    const presets = ['휴무','늦퇴','회의','회의불참','여행'];
     if (presets.includes(evData.title)) {
       const r = document.querySelector(`input[name="evt-title"][value="${evData.title}"]`);
       if (r) r.checked = true;
@@ -307,6 +339,7 @@ function openEventSheet(date = null, evData = null) {
     }
 
     $('event-date').value = evData.date;
+    $('event-end-date').value = evData.endDate || '';
     allDayToggle.checked = !!evData.allDay;
     timeFields.style.display = evData.allDay ? 'none' : 'flex';
     $('event-start').value = evData.startTime || '';
@@ -317,6 +350,7 @@ function openEventSheet(date = null, evData = null) {
     delBtn.style.display = 'none';
     repeatField.style.display = 'block';
     $('event-date').value = date || fmtDate(new Date());
+    $('event-end-date').value = '';
     const ft = document.querySelector('input[name="evt-title"]');
     if (ft) ft.checked = true;
     const nr = document.querySelector('input[name="evt-repeat"][value="none"]');
@@ -347,10 +381,14 @@ function getFormData() {
   const date = $('event-date').value;
   if (!date) { alert('날짜를 선택하세요'); return null; }
 
+  const endDate = $('event-end-date').value;
+  if (endDate && endDate < date) { alert('종료일은 시작일 이후여야 합니다'); return null; }
+
   return {
     memberId: selectedMember.dataset.mid,
     title: titleVal,
     date,
+    endDate: endDate || '',
     allDay: allDayToggle.checked,
     startTime: allDayToggle.checked ? '' : $('event-start').value,
     endTime: allDayToggle.checked ? '' : $('event-end').value,
@@ -369,7 +407,6 @@ $('form-event').addEventListener('submit', async e => {
   const eventId = $('event-id').value;
 
   if (eventId) {
-    // 수정
     const ev = events.find(e => e.id === eventId);
     if (ev && ev.repeatGroup) {
       pendingRepeatAction = { type: 'edit', eventId, formData: data };
@@ -386,7 +423,7 @@ $('form-event').addEventListener('submit', async e => {
   closeSheet('sheet-event');
 });
 
-// 삭제 버튼
+// 삭제
 $('btn-delete-event').addEventListener('click', () => {
   const eventId = $('event-id').value;
   if (!eventId) return;
@@ -404,7 +441,7 @@ $('btn-delete-event').addEventListener('click', () => {
   }
 });
 
-// 반복 액션 선택
+// 반복 액션
 document.querySelectorAll('[data-repeat-mode]').forEach(btn => {
   btn.addEventListener('click', async () => {
     if (!pendingRepeatAction) return;
@@ -436,13 +473,15 @@ function openDaySheet(dateStr) {
       const m = findMember(ev.memberId);
       const c = m ? m.color : '#868e96';
       const name = m ? m.name : '?';
-      const time = ev.allDay ? '종일' : (ev.startTime ? `${ev.startTime}${ev.endTime ? ' ~ '+ev.endTime : ''}` : '');
+      const time = formatTimeDisplay(ev);
+      const dateRange = formatDateRange(ev);
       const rpt = ev.repeat && ev.repeat !== 'none' ? repeatLabel(ev.repeat) + ' 반복' : '';
+      const metaParts = [dateRange, time, ev.memo].filter(Boolean).join(' · ');
       return `<div class="day-ev" data-eid="${ev.id}">
         <span class="de-dot" style="background:${c}"></span>
         <div class="de-info">
           <div class="de-title">${name} · ${ev.title}</div>
-          <div class="de-meta">${time}${ev.memo ? ' · '+ev.memo : ''}</div>
+          ${metaParts ? `<div class="de-meta">${metaParts}</div>` : ''}
           ${rpt ? `<div class="de-repeat">${rpt}</div>` : ''}
         </div>
       </div>`;
