@@ -1,0 +1,16 @@
+{
+  "name": "shared-calendar",
+  "version": "1.0.0",
+  "description": "공유 캘린더 - 자취 친구 3명용",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.8.3"
+  }
+}

@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <title>우리집 캘린더</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <header class="header">
+    <button class="hdr-btn" id="btn-prev">&lsaquo;</button>
+    <h1 id="current-month"></h1>
+    <button class="hdr-btn" id="btn-next">&rsaquo;</button>
+    <button class="hdr-btn today-btn" id="btn-today">오늘</button>
+  </header>
+
+  <div class="member-bar" id="member-bar">
+    <div class="member-chips" id="member-chips"></div>
+    <button class="chip chip-add" id="btn-add-member">+</button>
+  </div>
+
+  <div class="conn-status" id="conn-status"></div>
+
+  <div class="calendar">
+    <div class="weekdays">
+      <span class="sun">일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span class="sat">토</span>
+    </div>
+    <div class="days" id="calendar-days"></div>
+  </div>
+
+  <div class="today-section">
+    <h2 id="today-title">오늘의 일정</h2>
+    <div id="today-events"></div>
+  </div>
+
+  <button class="fab" id="btn-fab">+</button>
+
+  <!-- 날짜 상세 -->
+  <div class="sheet-overlay" id="sheet-day">
+    <div class="sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <h3 id="sheet-day-title"></h3>
+        <button class="sheet-close" data-close="sheet-day">&times;</button>
+      </div>
+      <div class="sheet-body" id="day-events-list"></div>
+      <div class="sheet-footer">
+        <button class="btn-full" id="btn-add-event-day">일정 추가</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 멤버 추가 -->
+  <div class="sheet-overlay" id="sheet-member">
+    <div class="sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <h3>멤버 추가</h3>
+        <button class="sheet-close" data-close="sheet-member">&times;</button>
+      </div>
+      <form id="form-member" class="sheet-body">
+        <div class="field">
+          <label>이름</label>
+          <input type="text" id="member-name" placeholder="이름" required maxlength="10">
+        </div>
+        <div class="field">
+          <label>색상</label>
+          <div class="color-row">
+            <label class="color-opt"><input type="radio" name="mc" value="#4A90D9" checked><span style="background:#4A90D9"></span></label>
+            <label class="color-opt"><input type="radio" name="mc" value="#E85D75"><span style="background:#E85D75"></span></label>
+            <label class="color-opt"><input type="radio" name="mc" value="#27AE60"><span style="background:#27AE60"></span></label>
+            <label class="color-opt"><input type="radio" name="mc" value="#F5A623"><span style="background:#F5A623"></span></label>
+            <label class="color-opt"><input type="radio" name="mc" value="#8E44AD"><span style="background:#8E44AD"></span></label>
+          </div>
+        </div>
+        <button type="submit" class="btn-full">추가</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- 일정 추가/수정 -->
+  <div class="sheet-overlay" id="sheet-event">
+    <div class="sheet sheet-tall">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <h3 id="sheet-event-title">일정 추가</h3>
+        <button class="sheet-close" data-close="sheet-event">&times;</button>
+      </div>
+      <form id="form-event" class="sheet-body">
+        <input type="hidden" id="event-id">
+
+        <div class="field">
+          <label>누구</label>
+          <div class="member-select-row" id="member-select-row"></div>
+        </div>
+
+        <div class="field">
+          <label>일정</label>
+          <div class="title-options" id="title-options">
+            <label class="title-opt"><input type="radio" name="evt-title" value="휴무"><span>휴무</span></label>
+            <label class="title-opt"><input type="radio" name="evt-title" value="늦퇴"><span>늦퇴</span></label>
+            <label class="title-opt"><input type="radio" name="evt-title" value="회식불참"><span>회식불참</span></label>
+            <label class="title-opt"><input type="radio" name="evt-title" value="여행"><span>여행</span></label>
+            <label class="title-opt"><input type="radio" name="evt-title" value="__custom"><span>직접입력</span></label>
+          </div>
+          <input type="text" id="event-custom-title" class="custom-title-input" placeholder="일정 제목 입력" maxlength="30" style="display:none">
+        </div>
+
+        <div class="field field-row">
+          <label>종일</label>
+          <label class="toggle">
+            <input type="checkbox" id="event-allday" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <div class="field">
+          <label>시작일</label>
+          <input type="date" id="event-date" required>
+        </div>
+
+        <div class="field" id="field-end-date" style="display:none">
+          <label>종료일</label>
+          <input type="date" id="event-end-date">
+        </div>
+
+        <div class="time-fields" id="time-fields" style="display:none">
+          <div class="field-half">
+            <label>시작</label>
+            <input type="time" id="event-start">
+          </div>
+          <div class="field-half">
+            <label>종료</label>
+            <input type="time" id="event-end">
+          </div>
+        </div>
+
+        <div class="field" id="repeat-field">
+          <label>반복</label>
+          <div class="repeat-options">
+            <label class="repeat-opt"><input type="radio" name="evt-repeat" value="none" checked><span>없음</span></label>
+            <label class="repeat-opt"><input type="radio" name="evt-repeat" value="daily"><span>매일</span></label>
+            <label class="repeat-opt"><input type="radio" name="evt-repeat" value="weekly"><span>매주</span></label>
+            <label class="repeat-opt"><input type="radio" name="evt-repeat" value="biweekly"><span>격주</span></label>
+            <label class="repeat-opt"><input type="radio" name="evt-repeat" value="monthly"><span>매월</span></label>
+          </div>
+          <div class="repeat-until" id="repeat-until" style="display:none">
+            <label>반복 종료일</label>
+            <input type="date" id="event-repeat-end">
+          </div>
+        </div>
+
+        <div class="field">
+          <label>메모</label>
+          <input type="text" id="event-memo" placeholder="메모 (선택)" maxlength="100">
+        </div>
+
+        <div class="form-btns">
+          <button type="button" class="btn-del" id="btn-delete-event" style="display:none">삭제</button>
+          <button type="submit" class="btn-full">저장</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 반복 일정 액션 선택 -->
+  <div class="sheet-overlay" id="sheet-repeat-action">
+    <div class="sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <h3 id="repeat-action-title">반복 일정</h3>
+        <button class="sheet-close" data-close="sheet-repeat-action">&times;</button>
+      </div>
+      <div class="sheet-body repeat-action-list">
+        <button class="action-btn" data-repeat-mode="this">이 일정만</button>
+        <button class="action-btn" data-repeat-mode="future">이 일정 및 향후 일정</button>
+        <button class="action-btn" data-repeat-mode="all">모든 일정</button>
+        <button class="action-btn cancel-btn" data-close="sheet-repeat-action">취소</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
