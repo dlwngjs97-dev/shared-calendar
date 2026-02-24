@@ -8,7 +8,7 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 const PORT = process.env.PORT || 3000;
-const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://dlwngjs97:Centras123!@cluster0.7ugphzq.mongodb.net/shared-calendar?appName=Cluster0';
+const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://dlwngjs97:Centras123%21@cluster0.7ugphzq.mongodb.net/shared-calendar?retryWrites=true&w=majority';
 
 let db;
 
