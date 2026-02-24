@@ -8,19 +8,32 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 const PORT = process.env.PORT || 3000;
-const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://dlwngjs97:Centras123%21@cluster0.7ugphzq.mongodb.net/shared-calendar?retryWrites=true&w=majority';
+const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://dlwngjs97:Centras123@cluster0.7ugphzq.mongodb.net/shared-calendar?retryWrites=true&w=majority';
 
 let db;
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// MongoDB 연결
-async function connectDB() {
-  const client = new MongoClient(MONGO_URI);
-  await client.connect();
-  db = client.db('shared-calendar');
-  console.log('MongoDB 연결 완료');
+// MongoDB 연결 (재시도 포함)
+async function connectDB(retries = 5) {
+  for (let i = 1; i <= retries; i++) {
+    try {
+      const client = new MongoClient(MONGO_URI, {
+        tls: true,
+        serverSelectionTimeoutMS: 10000,
+        connectTimeoutMS: 10000,
+      });
+      await client.connect();
+      db = client.db('shared-calendar');
+      console.log('MongoDB 연결 완료');
+      return;
+    } catch (err) {
+      console.log(`MongoDB 연결 시도 ${i}/${retries} 실패:`, err.message);
+      if (i === retries) throw err;
+      await new Promise(r => setTimeout(r, 3000));
+    }
+  }
 }
 
 // DB 읽기/쓰기 헬퍼
